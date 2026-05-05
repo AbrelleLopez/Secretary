@@ -15,7 +15,7 @@ import {
 import { db, auth } from '../lib/firebase';
 import { Notification, ComicInfo } from '../types';
 import { lookupTitlesFromJikan } from './jikanService';
-import { mapStatus } from './geminiService';
+import { mapStatus } from '../lib/comicUtils';
 
 export async function getNotifications(): Promise<Notification[]> {
   const user = auth.currentUser;

@@ -1,9 +1,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ComicInfo, ComicType, ComicStatus } from "../types";
 import { lookupTitlesFromJikan } from "./jikanService";
+import { mapStatus, normalize, isRelevant } from "../lib/comicUtils";
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("[AI Engine] GEMINI_API_KEY is not defined in the environment.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey: apiKey || '' });
+  }
+  return aiInstance;
+}
 
 const comicSchema = {
   type: Type.OBJECT,
@@ -56,53 +67,14 @@ async function retryLookup<T>(fn: () => Promise<T>, retries = 5, delay = 3000): 
   }
 }
 
-export function mapStatus(status: string): ComicStatus {
-  const s = status.toLowerCase();
-  if (s.includes('ongoing') || s.includes('publishing')) return 'ongoing';
-  if (s.includes('finished') || s.includes('complete')) return 'finished';
-  if (s.includes('hiatus')) return 'hiatus';
-  if (s.includes('cancelled')) return 'cancelled';
-  if (s.includes('discontinued')) return 'discontinued';
-  return 'unknown';
-}
-
-function normalize(s: string | undefined): string {
-  return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function isRelevant(query: string, title: string, altTitles: string[]): boolean {
-  const nQ = normalize(query);
-  if (!nQ) return true;
-  
-  const searchWords = nQ.split(' ').filter(w => w.length > 2);
-  
-  const check = (t: string) => {
-    const nT = normalize(t);
-    if (!nT) return false;
-    if (nT.includes(nQ) || nQ.includes(nT)) return true;
-    
-    if (searchWords.length === 0) return false;
-    
-    const targetWords = new Set(nT.split(' ').filter(w => w.length > 2));
-    let matches = 0;
-    searchWords.forEach(w => { if (targetWords.has(w)) matches++; });
-    
-    // For longer queries, require more overlap to avoid unrelated results
-    if (searchWords.length >= 4) {
-      return matches >= Math.max(2, Math.ceil(searchWords.length * 0.5));
-    }
-    return matches >= 1;
-  };
-
-  if (check(title)) return true;
-  return (altTitles || []).some(at => check(at));
-}
-
 export async function lookupComicsBatch(searchQueries: string[]): Promise<Record<string, ComicInfo[]>> {
   if (searchQueries.length === 0) return {};
 
+  const ai = getAI();
+
   return retryLookup(async () => {
     const queriesStr = searchQueries.join(', ');
+    console.log(`[AI Engine] Dispatching batch request for queries: ${queriesStr}`);
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Search for comics matching each of these queries: [${queriesStr}].
@@ -111,19 +83,22 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
       - Return a list of highly relevant matches.
       - If a query is gibberish, return an empty array [].
       - ONLY return real, existing comics (Manga, Manhwa, Manhua).
-      - UP TO 20 results per query.
-      - **CRITICAL**: If the user provides a very specific long title (e.g., "The Reason Why that Villainess Can Pick Up the Sword"), you MUST prioritize finding and returning THAT exact comic.
-      - **DO NOT** substitute a specific requested title with a "similar" popular title.
-      - IMPORTANT: Include famous Manhua (Chinese) and Manhwa (Korean). Many Manhuas/Manhwas are NOT on Jikan/MAL, so use your internal knowledge. 
-        - For example: "Doulou Dalu" is "Soul Land" (Douluo Dalu). "Fetters of Fate" is a specific Manhua.
+      - UP TO 10 results per query.
+      - **CRITICAL**: If the user provides a very specific long title, prioritize finding THAT exact comic.
+      - Include famous Manhua (Chinese) and Manhwa (Korean).
       - Return a JSON object where keys are the EXACT query strings provided and values are arrays of comic objects.
- 
-      Comic Object Structure:
-      - title (The most common English release title), type (manga/manhwa/manhua), status (ongoing/finished/hiatus/cancelled/unknown), genres, synopsis, author, releaseYear, originalLanguage, altTitles (Include ALL known alternative titles, romanizations, and original language titles).
       
       Query List: ${queriesStr}`,
       config: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          description: "A map of search queries to arrays of comic results",
+          properties: Object.fromEntries(searchQueries.map(q => [q, {
+            type: Type.ARRAY,
+            items: comicSchema
+          }]))
+        }
       }
     });
 

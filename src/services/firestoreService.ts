@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { ComicInfo } from '../types';
-import { mapStatus } from './geminiService';
+import { mapStatus } from '../lib/comicUtils';
 
 enum OperationType {
   CREATE = 'create',
