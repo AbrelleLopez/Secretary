@@ -33,7 +33,9 @@ is a polished, AI-powered library manager designed specifically for fans of Mang
 ## 🛠️ Getting Started
 
 ### Link to the web app / DEPLOYMENT
+(due to rate limits, this app is published for personal use and owner permissions to prevent exceeding the rate limit. )
 - https://gen-lang-client-0678318574.web.app
+To get owner permissions, talk to Abrelle Yin Lopez 💗
 
 # ENJOY!
 
