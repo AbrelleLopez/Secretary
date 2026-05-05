@@ -67,6 +67,10 @@ async function retryLookup<T>(fn: () => Promise<T>, retries = 5, delay = 3000): 
   }
 }
 
+export function isAIConfigured(): boolean {
+  return !!process.env.GEMINI_API_KEY;
+}
+
 export async function lookupComicsBatch(searchQueries: string[]): Promise<Record<string, ComicInfo[]>> {
   if (searchQueries.length === 0) return {};
 

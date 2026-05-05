@@ -23,6 +23,7 @@ import {
   MinusCircle,
   RefreshCw,
   Edit3,
+  AlertTriangle,
   Bell,
   CheckCircle2,
   MessageCircle,
@@ -402,6 +403,7 @@ function MainContent() {
   const { user, logout, login } = useAuth();
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAiExhausted, setIsAiExhausted] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('explore');
   
@@ -424,6 +426,15 @@ function MainContent() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('recent');
   const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState<{ message: string, type: 'info' | 'success' | 'warn' } | null>(null);
+
+  useEffect(() => {
+    // Check if AI is configured on mount
+    import('./services/geminiService').then(m => {
+      if (!m.isAIConfigured()) {
+        setIsAiExhausted(true);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -490,6 +501,9 @@ function MainContent() {
     try {
       const resultsAccumulator: SearchResult[] = [];
       const titlesToSearch: string[] = [];
+      
+      // Reset exhaustion status on new attempt
+      setIsAiExhausted(false);
 
       // 1. Initial Duplicate Filtering
       for (const title of allTitles) {
@@ -551,6 +565,7 @@ function MainContent() {
             });
             
             if (isQuotaError) {
+              setIsAiExhausted(true);
               showToast("API Quota Reached. Slowing down...", "warn");
               await new Promise(resolve => setTimeout(resolve, 5000));
             }
@@ -936,6 +951,24 @@ function MainContent() {
                   <h2 className="text-xs font-black uppercase tracking-[0.4em] text-[#ec4899]/60 mb-3">Synchronization Hub</h2>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                     <h1 className="text-4xl sm:text-7xl font-black text-white tracking-tighter">Input Terminal.</h1>
+                    
+                    {isAiExhausted && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 rounded-xl"
+                      >
+                        <AlertTriangle className="text-amber-500" size={14} />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">AI Search Exhausted (Quota)</span>
+                      </motion.div>
+                    )}
+                    
+                    {!isAiExhausted && !isProcessing && (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">AI Search Ready</span>
+                      </div>
+                    )}
                   </div>
                   <p className="text-slate-500 mt-4 text-base sm:text-lg font-medium max-w-xl">
                     Enter one or more titles. AI will search for matches; you can select the correct comic to store in the secretary.
