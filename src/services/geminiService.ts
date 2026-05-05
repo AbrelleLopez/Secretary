@@ -65,6 +65,38 @@ function mapStatus(status: string): ComicStatus {
   return 'unknown';
 }
 
+function normalize(s: string | undefined): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function isRelevant(query: string, title: string, altTitles: string[]): boolean {
+  const nQ = normalize(query);
+  if (!nQ) return true;
+  
+  const searchWords = nQ.split(' ').filter(w => w.length > 2);
+  
+  const check = (t: string) => {
+    const nT = normalize(t);
+    if (!nT) return false;
+    if (nT.includes(nQ) || nQ.includes(nT)) return true;
+    
+    if (searchWords.length === 0) return false;
+    
+    const targetWords = new Set(nT.split(' ').filter(w => w.length > 2));
+    let matches = 0;
+    searchWords.forEach(w => { if (targetWords.has(w)) matches++; });
+    
+    // For longer queries, require more overlap to avoid unrelated results
+    if (searchWords.length >= 4) {
+      return matches >= Math.max(2, Math.ceil(searchWords.length * 0.5));
+    }
+    return matches >= 1;
+  };
+
+  if (check(title)) return true;
+  return (altTitles || []).some(at => check(at));
+}
+
 export async function lookupComicsBatch(searchQueries: string[]): Promise<Record<string, ComicInfo[]>> {
   if (searchQueries.length === 0) return {};
 
@@ -78,12 +110,15 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
       - Return a list of highly relevant matches.
       - If a query is gibberish, return an empty array [].
       - ONLY return real, existing comics (Manga, Manhwa, Manhua).
-      - UP TO 20 results per query. Prioritize exact matches.
-      - Ensure you include famous Manhua (Chinese) as well as Manga and Manhwa.
+      - UP TO 20 results per query.
+      - **CRITICAL**: If the user provides a very specific long title (e.g., "The Reason Why that Villainess Can Pick Up the Sword"), you MUST prioritize finding and returning THAT exact comic.
+      - **DO NOT** substitute a specific requested title with a "similar" popular title.
+      - IMPORTANT: Include famous Manhua (Chinese) and Manhwa (Korean). Many Manhuas/Manhwas are NOT on Jikan/MAL, so use your internal knowledge. 
+        - For example: "Doulou Dalu" is "Soul Land" (Douluo Dalu). "Fetters of Fate" is a specific Manhua.
       - Return a JSON object where keys are the EXACT query strings provided and values are arrays of comic objects.
  
       Comic Object Structure:
-      - title (The most common English release title), type (manga/manhwa/manhua), status (ongoing/finished/hiatus/cancelled/unknown), genres, synopsis, author, releaseYear, originalLanguage, altTitles (Include ALL known alternative titles).
+      - title (The most common English release title), type (manga/manhwa/manhua), status (ongoing/finished/hiatus/cancelled/unknown), genres, synopsis, author, releaseYear, originalLanguage, altTitles (Include ALL known alternative titles, romanizations, and original language titles).
       
       Query List: ${queriesStr}`,
       config: {
@@ -105,38 +140,18 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
         
         results = results || [];
         
-        // Final relevance filter: Allow more looseness for Gemini results
         const filteredResults = (results as any[]).map(data => ({
           title: data.title || query,
           type: (data.type || 'unknown').toLowerCase() as ComicType,
           status: mapStatus(data.status || 'unknown'),
           genres: data.genres || [],
-          synopsis: data.synopsis || "No matches found.",
+          synopsis: data.synopsis || "No synopsis available.",
           originalLanguage: data.originalLanguage || "Unknown",
           author: data.author || "Unknown",
           releaseYear: data.releaseYear || "Unknown",
           rating: data.rating,
           altTitles: data.altTitles || []
-        })).filter(comic => {
-          const normalize = (s: string | undefined) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-          const nT = normalize(comic.title);
-          const nQ = normalize(query);
-          
-          // Heuristic relevance: 
-          // 1. One contains the other
-          // 2. Or they share at least 50% of words (for typos/long titles)
-          if (nT.includes(nQ) || nQ.includes(nT)) return true;
-          
-          const wordsT = new Set(nT.split(' ').filter(w => w.length > 2));
-          const wordsQ = new Set(nQ.split(' ').filter(w => w.length > 2));
-          if (wordsQ.size === 0) return true; // fallback if query is very short
-          
-          let matches = 0;
-          wordsQ.forEach(w => { if (wordsT.has(w)) matches++; });
-          
-          // If at least one long word matches, it's probably relevant enough to show
-          return matches > 0;
-        });
+        })).filter(comic => isRelevant(query, comic.title, comic.altTitles));
 
         normalized[query] = filteredResults;
       });
@@ -150,7 +165,6 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
 }
 
 export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
-  const normalize = (s: string | undefined) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const searchNorm = normalize(title);
   
   if (!searchNorm) return [];
@@ -171,27 +185,14 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
     altTitles: res.titles?.map((t: any) => t.title) || []
   }));
 
-  // Filter Jikan results: Containment check on normalized strings
-  const relevantJikan = mappedJikan.filter(c => {
-    const nTitle = normalize(c.title);
-    const nAlts = c.altTitles.map(at => normalize(at));
-    
-    if (nTitle.includes(searchNorm) || nAlts.some(at => at.includes(searchNorm)) || searchNorm.includes(nTitle)) return true;
-    
-    const wordsT = new Set(nTitle.split(' ').filter(w => w.length > 2));
-    const wordsQ = new Set(searchNorm.split(' ').filter(w => w.length > 2));
-    if (wordsQ.size === 0) return true;
-    
-    let matches = 0;
-    wordsQ.forEach(w => { if (wordsT.has(w)) matches++; });
-    return matches > 0;
-  });
+  // Filter Jikan results: Robust relevance check
+  const relevantJikan = mappedJikan.filter(c => isRelevant(title, c.title, c.altTitles));
 
   // 2. Fetch Gemini Results 
-  // We fetch Gemini results if we have few Jikan matches OR if the user is looking for something specific (heuristic)
+  // We fetch Gemini results if we have few Jikan matches OR if it's likely a Manhua/Manhwa (often not on MAL)
   let geminiData: ComicInfo[] = [];
   if (relevantJikan.length < 5) {
-    console.log(`[Lookup] Jikan results low (${relevantJikan.length}), fetching Gemini...`);
+    console.log(`[Lookup] Jikan results low or specific query, fetching Gemini...`);
     geminiData = await lookupComic(title);
   }
 
@@ -202,21 +203,7 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
   [...relevantJikan, ...geminiData].forEach(comic => {
     const titleKey = comic.title.toLowerCase().trim();
     if (!seen.has(titleKey)) {
-      const nT = normalize(comic.title);
-      
-      const isRelevanceSatisfied = nT.includes(searchNorm) || 
-                                  comic.altTitles.some(at => normalize(at).includes(searchNorm)) ||
-                                  searchNorm.includes(nT) ||
-                                  (() => {
-                                    const wordsT = new Set(nT.split(' ').filter(w => w.length > 2));
-                                    const wordsQ = new Set(searchNorm.split(' ').filter(w => w.length > 2));
-                                    if (wordsQ.size === 0) return true;
-                                    let matches = 0;
-                                    wordsQ.forEach(w => { if (wordsT.has(w)) matches++; });
-                                    return matches > 0;
-                                  })();
-      
-      if (isRelevanceSatisfied) {
+      if (isRelevant(title, comic.title, comic.altTitles)) {
         seen.add(titleKey);
         combined.push(comic);
       }
@@ -229,8 +216,9 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
   return combined.sort((a, b) => {
     const nA = normalize(a.title);
     const nB = normalize(b.title);
-    const aExact = nA === searchNorm || a.altTitles.some(at => normalize(at) === searchNorm);
-    const bExact = nB === searchNorm || b.altTitles.some(at => normalize(at) === searchNorm);
+    const nQ = normalize(title);
+    const aExact = nA === nQ || a.altTitles.some(at => normalize(at) === nQ);
+    const bExact = nB === nQ || b.altTitles.some(at => normalize(at) === nQ);
     
     if (aExact && !bExact) return -1;
     if (!aExact && bExact) return 1;

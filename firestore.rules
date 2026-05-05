@@ -35,10 +35,11 @@ service cloud.firestore {
     function isValidComic(data) {
       return data.title is string && data.title.size() <= 2000
         && (data.has('userId') ? data.userId == request.auth.uid : true)
-        && (data.has('timestamp') ? data.timestamp == request.time : true);
+        && (data.has('type') ? data.type is string && data.type.size() <= 100 : true)
+        && (data.has('status') ? data.status is string && data.status.size() <= 100 : true)
+        && (data.has('genres') ? data.genres is list : true)
+        && (data.has('author') ? data.author is string && data.author.size() <= 1000 : true);
     }
-
-    // Previous isCompleteComic was too strict, removed it from flow.
 
     function isValidNotification(data) {
       return data.keys().hasAll(['userId', 'title', 'message', 'type', 'timestamp', 'read'])
@@ -59,6 +60,11 @@ service cloud.firestore {
         && data.timestamp == request.time;
     }
 
+    // Combined write validation
+    function canWrite() {
+      return isSignedIn();
+    }
+
     // Whitelist access
     match /allowedUsers/{email} {
       allow read: if isSignedIn() && request.auth.token.email == email;
@@ -67,32 +73,31 @@ service cloud.firestore {
     // Notifications Collection
     match /notifications/{notificationId} {
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && isValidId(notificationId) && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidNotification(incoming());
-      allow update: if isSignedIn() 
-        && isValidId(notificationId)
-        && isOwner(existing().userId) 
-        && incoming().read == true 
-        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow delete: if isSignedIn() && isValidId(notificationId) && isOwner(existing().userId);
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
 
     // Chat Collection
     match /chat_messages/{messageId} {
       allow list: if isSignedIn();
-      allow get: if isSignedIn() && isValidId(messageId);
-      allow create: if isSignedIn() && isValidChatMessage(incoming());
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
       allow delete: if false; 
       allow update: if false; 
     }
 
     // Recent Reads Collection
     match /recent_reads/{readId} {
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
-      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid);
-      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid);
-      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() 
+        && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() 
+        && existing().userId == request.auth.uid 
+        && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
   }
 }
