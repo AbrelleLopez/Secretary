@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 📚 Secretary
 
-# Run and deploy your AI Studio app
+**Secretary.** 
+is a polished, AI-powered library manager designed specifically for fans of Manga, Manhwa, and Manhua. It helps you track your reading list, discover new titles, and stay updated on publication statuses with a sleek, minimalist terminal-inspired interface.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/f259a069-1aa4-4ae5-a738-17e63e2a3c69
+## ✨ Features
 
-## Run Locally
+- **Intelligence-First Search**: Leverages a hybrid approach using the **Jikan API (MyAnimeList)** and **Google Gemini AI** to find even the most obscure titles, including webtoons and manhua that aren't listed on traditional databases.
+- **Smart Title Matching**: Searched for an alternative title? Secretary recognizes aliases and maps them back to your original query for a seamless experience.
+- **The "Secretary" & The "Waste"**: 
+  - **Secretary**: Your main hub for ongoing and favorite reads.
+  - **Waste**: A dedicated secondary space for dropped or lower-priority titles ("Dropped" comics).
+- **Automated Metadata**: Automatically fetches genres, synopses, authors, and release years.
+- **Live Status Tracking**: Turn "publishing" into "ongoing" and get notified the moment a series finishes its run.
+- **Terminal Input Hub**: Add multiple titles at once using a powerful bulk-processing terminal interface.
+- **Cloud Informed**: Synchronizes your data securely across devices using Firebase.
 
-**Prerequisites:**  Node.js
+---
 
+## 🚀 Tech Stack
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Frontend**: React 18+ with Vite
+- **Styling**: Tailwind CSS
+- **Animations**: Motion (framer-motion)
+- **Database/Auth**: Firebase (Firestore & Google Auth)
+- **AI Engine**: Google Gemini API
+- **External Data**: Jikan API (MyAnimeList)
+
+---
+
+## 🛠️ Getting Started
+
+### Link to the web app / DEPLOYMENT
+- https://gen-lang-client-0678318574.web.app
+
+# ENJOY!
+
+## 🛡️ License
+
+Built with ❤️ using Google AI Studio.
