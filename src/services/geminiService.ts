@@ -7,7 +7,8 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    console.log("[DEBUG] API Key loaded:", apiKey ? "EXISTS" : "MISSING"); // add this
     if (!apiKey) {
       console.error("[AI Engine] GEMINI_API_KEY is not defined in the environment.");
     }
@@ -80,7 +81,7 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
     const queriesStr = searchQueries.join(', ');
     console.log(`[AI Engine] Dispatching batch request for queries: ${queriesStr}`);
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: `Search for comics matching each of these queries: [${queriesStr}].
       
       Requirements for EACH query:
@@ -204,7 +205,7 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
   // 2. Fetch Gemini Results 
   // We fetch Gemini results if we have few Jikan matches OR if it's likely a Manhua/Manhwa (often not on MAL)
   let geminiData: ComicInfo[] = [];
-  if (relevantJikan.length < 5) {
+  if (relevantJikan.length < 1) {
     console.log(`[Lookup] Jikan results low or specific query, fetching Gemini...`);
     geminiData = await lookupComic(title);
   }
