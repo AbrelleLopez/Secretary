@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAllowed() {
+      return isSignedIn() && exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email));
+    }
+
+    // Comic Info Validation
+    function isValidComic(data) {
+      return data.keys().hasAll(['title', 'type', 'status', 'genres', 'userId', 'timestamp', 'synopsis', 'author', 'releaseYear', 'originalLanguage'])
+        && data.keys().size() <= 15
+        && data.title is string && data.title.size() <= 600
+        && data.type in ['manga', 'manhwa', 'manhua', 'unknown']
+        && data.status in ['ongoing', 'finished', 'hiatus', 'unknown', 'cancelled', 'discontinued']
+        && data.genres is list
+        && data.synopsis is string && data.synopsis.size() <= 10000
+        && data.author is string && data.author.size() <= 500
+        && data.releaseYear is string && data.releaseYear.size() <= 100
+        && data.originalLanguage is string && data.originalLanguage.size() <= 200
+        && (data.keys().hasAny(['dropped']) ? data.dropped is bool : true)
+        && data.userId == request.auth.uid
+        && (request.method == 'create' ? data.timestamp == request.time : true);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'type', 'timestamp', 'read'])
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() <= 200
+        && data.message is string && data.message.size() <= 1000
+        && data.type in ['status_change', 'info']
+        && data.read is bool
+        && (request.method == 'create' ? data.timestamp == request.time : true);
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['userId', 'userName', 'userEmail', 'message', 'timestamp'])
+        && data.userId == request.auth.uid
+        && data.userEmail == request.auth.token.email
+        && data.userName is string && data.userName.size() <= 200
+        && data.message is string && data.message.size() <= 2000
+        && data.timestamp == request.time;
+    }
+
+    // Whitelist access
+    match /allowedUsers/{email} {
+      allow read: if isSignedIn() && request.auth.token.email == email;
+    }
+
+    // Notifications Collection
+    match /notifications/{notificationId} {
+      allow list: if isAllowed() && resource.data.userId == request.auth.uid;
+      allow get: if isAllowed() && isValidId(notificationId) && resource.data.userId == request.auth.uid;
+      allow create: if isAllowed() && isValidNotification(incoming());
+      allow update: if isAllowed() 
+        && isValidId(notificationId)
+        && isOwner(existing().userId) 
+        && incoming().read == true 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isAllowed() && isValidId(notificationId) && isOwner(existing().userId);
+    }
+
+    // Chat Collection
+    match /chat_messages/{messageId} {
+      allow list: if isAllowed();
+      allow get: if isAllowed() && isValidId(messageId);
+      allow create: if isAllowed() && isValidChatMessage(incoming());
+      allow delete: if false; 
+      allow update: if false; 
+    }
+
+    // Recent Reads Collection
+    match /recent_reads/{readId} {
+      allow list: if isAllowed() && resource.data.userId == request.auth.uid;
+      allow get: if isAllowed() && isValidId(readId) && resource.data.userId == request.auth.uid;
+      allow create: if isAllowed() 
+        && isValidComic(incoming())
+        && incoming().userId == request.auth.uid;
+      allow update: if isAllowed()
+        && isValidId(readId)
+        && isOwner(existing().userId)
+        && isValidComic(incoming())
+        && incoming().userId == existing().userId;
+      allow delete: if isAllowed() && isValidId(readId) && existing().userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "ComicInfo": {
+      "title": "Comic Info",
+      "description": "Information about a comic (manga, manhwa, or manhua).",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["manga", "manhwa", "manhua", "unknown"] },
+        "status": { "type": "string", "enum": ["ongoing", "finished", "hiatus", "cancelled", "discontinued", "unknown"] },
+        "genres": { "type": "array", "items": { "type": "string" } },
+        "synopsis": { "type": "string" },
+        "originalLanguage": { "type": "string" },
+        "author": { "type": "string" },
+        "releaseYear": { "type": "string" },
+        "rating": { "type": "string" },
+        "altTitles": { "type": "array", "items": { "type": "string" } },
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "dropped": { "type": "boolean" }
+      },
+      "required": ["title", "type", "status", "genres", "userId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification for comic updates.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["status_change", "info"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" },
+        "comicId": { "type": "string" }
+      },
+      "required": ["userId", "title", "message", "type", "timestamp", "read"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "Real-time message in the group chat.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "userEmail", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/allowedUsers": {
+      "schema": { "type": "object", "properties": { "id": { "type": "string" } } },
+      "description": "Whitelist of user emails allowed to access the intelligence hub."
+    },
+    "/chat_messages": {
+      "schema": "ChatMessage",
+      "description": "Group chat messages for whitelisted users."
+    },
+    "/notifications": {
+      "schema": "Notification",
+      "description": "Collection of notifications for users."
+    },
+    "/recent_reads": {
+      "schema": "ComicInfo",
+      "description": "Main collection for user's comic archive with timestamps and statuses."
+    }
+  }
+}
