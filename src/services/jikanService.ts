@@ -7,27 +7,29 @@ export interface JikanManga {
   published: { from: string };
   status: string;
   type: string;
+  genres: { name: string }[];
+  titles: { type: string; title: string }[];
 }
 
-export async function lookupTitleFromJikan(title: string): Promise<JikanManga | null> {
+export async function lookupTitlesFromJikan(title: string, limit = 20): Promise<JikanManga[]> {
   try {
     // Jikan search endpoint for manga
-    const response = await fetch(`${JIKAN_BASE_URL}/manga?q=${encodeURIComponent(title)}&limit=1`);
+    const response = await fetch(`${JIKAN_BASE_URL}/manga?q=${encodeURIComponent(title)}&limit=${limit}`);
     if (!response.ok) {
       if (response.status === 429) {
         console.warn("[Jikan] Rate limit hit, skipping...");
       }
-      return null;
+      return [];
     }
     
     const data = await response.json();
 
-    if (data.data && data.data.length > 0) {
-      return data.data[0];
+    if (data.data && Array.isArray(data.data)) {
+      return data.data;
     }
-    return null;
+    return [];
   } catch (error) {
     console.error("[Jikan] lookup failed:", error);
-    return null;
+    return [];
   }
 }

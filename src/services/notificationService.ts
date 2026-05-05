@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Notification, ComicInfo } from '../types';
-import { lookupTitleFromJikan } from './jikanService';
+import { lookupTitlesFromJikan } from './jikanService';
 
 export async function getNotifications(): Promise<Notification[]> {
   const user = auth.currentUser;
@@ -69,7 +69,8 @@ export async function checkForUpdates(comics: ComicInfo[]) {
     if (comic.status === 'finished') continue;
 
     try {
-      const freshData = await lookupTitleFromJikan(comic.title);
+      const jikanResults = await lookupTitlesFromJikan(comic.title, 1);
+      const freshData = jikanResults.length > 0 ? jikanResults[0] : null;
       if (freshData) {
         const newStatus = (freshData.status || 'unknown').toLowerCase();
         

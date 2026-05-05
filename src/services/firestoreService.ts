@@ -75,11 +75,22 @@ export async function saveRecentRead(comic: ComicInfo) {
     const existing = await getDocs(q);
     
     if (existing.empty) {
+      // Essential fields must be strings or expected types
       const dataToSave = cleanData({
-        ...comic,
+        title: comic.title || 'Unknown Title',
+        type: comic.type || 'unknown',
+        status: comic.status || 'unknown',
+        genres: comic.genres || [],
         userId: user.uid,
         timestamp: serverTimestamp(),
-        dropped: false
+        dropped: false,
+        // Optional fields - only include if they exist to keep data clean
+        synopsis: comic.synopsis,
+        author: comic.author,
+        releaseYear: comic.releaseYear,
+        originalLanguage: comic.originalLanguage,
+        altTitles: comic.altTitles,
+        rating: comic.rating
       });
       await addDoc(collection(db, path), dataToSave);
     } else {

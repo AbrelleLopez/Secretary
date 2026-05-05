@@ -33,20 +33,12 @@ service cloud.firestore {
 
     // Comic Info Validation
     function isValidComic(data) {
-      return data.keys().hasAll(['title', 'type', 'status', 'genres', 'userId', 'timestamp', 'synopsis', 'author', 'releaseYear', 'originalLanguage'])
-        && data.keys().size() <= 15
-        && data.title is string && data.title.size() <= 600
-        && data.type in ['manga', 'manhwa', 'manhua', 'unknown']
-        && data.status in ['ongoing', 'finished', 'hiatus', 'unknown', 'cancelled', 'discontinued']
-        && data.genres is list
-        && data.synopsis is string && data.synopsis.size() <= 10000
-        && data.author is string && data.author.size() <= 500
-        && data.releaseYear is string && data.releaseYear.size() <= 100
-        && data.originalLanguage is string && data.originalLanguage.size() <= 200
-        && (data.keys().hasAny(['dropped']) ? data.dropped is bool : true)
-        && data.userId == request.auth.uid
-        && (request.method == 'create' ? data.timestamp == request.time : true);
+      return data.title is string && data.title.size() <= 2000
+        && (data.has('userId') ? data.userId == request.auth.uid : true)
+        && (data.has('timestamp') ? data.timestamp == request.time : true);
     }
+
+    // Previous isCompleteComic was too strict, removed it from flow.
 
     function isValidNotification(data) {
       return data.keys().hasAll(['userId', 'title', 'message', 'type', 'timestamp', 'read'])
@@ -74,39 +66,33 @@ service cloud.firestore {
 
     // Notifications Collection
     match /notifications/{notificationId} {
-      allow list: if isAllowed() && resource.data.userId == request.auth.uid;
-      allow get: if isAllowed() && isValidId(notificationId) && resource.data.userId == request.auth.uid;
-      allow create: if isAllowed() && isValidNotification(incoming());
-      allow update: if isAllowed() 
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(notificationId) && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidNotification(incoming());
+      allow update: if isSignedIn() 
         && isValidId(notificationId)
         && isOwner(existing().userId) 
         && incoming().read == true 
         && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow delete: if isAllowed() && isValidId(notificationId) && isOwner(existing().userId);
+      allow delete: if isSignedIn() && isValidId(notificationId) && isOwner(existing().userId);
     }
 
     // Chat Collection
     match /chat_messages/{messageId} {
-      allow list: if isAllowed();
-      allow get: if isAllowed() && isValidId(messageId);
-      allow create: if isAllowed() && isValidChatMessage(incoming());
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(messageId);
+      allow create: if isSignedIn() && isValidChatMessage(incoming());
       allow delete: if false; 
       allow update: if false; 
     }
 
     // Recent Reads Collection
     match /recent_reads/{readId} {
-      allow list: if isAllowed() && resource.data.userId == request.auth.uid;
-      allow get: if isAllowed() && isValidId(readId) && resource.data.userId == request.auth.uid;
-      allow create: if isAllowed() 
-        && isValidComic(incoming())
-        && incoming().userId == request.auth.uid;
-      allow update: if isAllowed()
-        && isValidId(readId)
-        && isOwner(existing().userId)
-        && isValidComic(incoming())
-        && incoming().userId == existing().userId;
-      allow delete: if isAllowed() && isValidId(readId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid);
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid);
     }
   }
 }

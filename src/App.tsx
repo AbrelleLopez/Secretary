@@ -342,7 +342,13 @@ function GroupChat({ onClose }: { onClose: () => void }) {
     >
       <div className="p-8 border-b border-[#3d0a1e] flex items-center justify-between bg-gradient-to-r from-[#3d0a1e]/20 to-transparent">
         <div>
-          <h3 className="text-xl font-black uppercase tracking-[0.2em] text-white italic">Intelligence Mesh.</h3>
+          <h3 className="text-xl font-black uppercase tracking-[0.2em] text-white italic flex items-center gap-3">
+            Intelligence Mesh.
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[8px] font-black text-emerald-400 tracking-widest animate-pulse">
+              <span className="w-1 h-1 rounded-full bg-emerald-400" />
+              LIVE
+            </span>
+          </h3>
           <p className="text-[10px] font-bold text-[#ec4899] uppercase tracking-widest mt-1">Direct Secure Line</p>
         </div>
         <button onClick={onClose} className="p-3 rounded-2xl bg-[#3d0a1e]/30 text-slate-500 hover:text-white transition-all hover:scale-110">
@@ -396,6 +402,7 @@ function MainContent() {
   const { user, logout, login } = useAuth();
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('explore');
   
   // Data States
@@ -504,29 +511,21 @@ function MainContent() {
       // 2. Execute Lookups in Small Chunks
       if (titlesToSearch.length > 0) {
         const { lookupComicsBatchHybrid } = await import('./services/geminiService');
-        const CHUNK_SIZE = 5; // Slightly larger chunk size since Jikan handles many titles
-        for (let i = 0; i < titlesToSearch.length; i += CHUNK_SIZE) {
-          const chunk = titlesToSearch.slice(i, i + CHUNK_SIZE);
+        for (let i = 0; i < titlesToSearch.length; i += 10) { // Larger chunk size
+          const chunk = titlesToSearch.slice(i, i + 10);
           
           try {
             const batchData = await lookupComicsBatchHybrid(chunk);
             
             chunk.forEach(query => {
               const options = batchData[query] || [];
-              if (options.length === 0) {
-                const fallback: ComicInfo = {
-                  title: query,
-                  type: 'unknown',
-                  status: 'unknown',
-                  genres: ['Manual Entry'],
-                  synopsis: 'Search returned no results from Jikan or Gemini backup.',
-                  author: 'Unknown',
-                  releaseYear: 'Unknown',
-                  originalLanguage: 'Unknown'
-                };
-                resultsAccumulator.push({ title: query, options: [fallback], isCustom: true });
-              } else {
+              if (options.length > 0) {
                 resultsAccumulator.push({ title: query, options });
+              } else {
+                // If no results, still add the search result entry with empty options
+                // so the user can see the "No Matches Found" UI and use the "Manual Entry" button.
+                resultsAccumulator.push({ title: query, options: [] });
+                console.log(`[Search] No relevant results found for: ${query}. Entry added for manual fallback.`);
               }
             });
           } catch (err: any) {
@@ -535,32 +534,31 @@ function MainContent() {
             const isQuotaError = errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted');
             
             chunk.forEach(query => {
-              const fallback: ComicInfo = {
-                title: query,
-                type: 'unknown',
-                status: 'unknown',
-                genres: [isQuotaError ? 'Quota Limit' : 'Sync Failure'],
-                synopsis: isQuotaError 
-                  ? 'Gemini API limit reached. Please wait a minute before trying remaining titles.' 
-                  : 'A temporary service disruption occurred during lookup.',
-                author: 'Unknown',
-                releaseYear: 'Unknown',
-                originalLanguage: 'Unknown'
-              };
-              resultsAccumulator.push({ title: query, options: [fallback], isCustom: true });
+              // On error, we still want to inform them but maybe not occupy the UI if they want "no results"
+              if (isQuotaError) {
+                const fallback: ComicInfo = {
+                  title: query,
+                  type: 'unknown',
+                  status: 'unknown',
+                  genres: ['API Limit'],
+                  synopsis: 'API quota reached. Please wait a minute.',
+                  author: 'System',
+                  releaseYear: 'N/A',
+                  originalLanguage: 'N/A'
+                };
+                resultsAccumulator.push({ title: query, options: [fallback], isCustom: true });
+              }
             });
             
             if (isQuotaError) {
               showToast("API Quota Reached. Slowing down...", "warn");
-              // Longer wait on quota hit
-              await new Promise(resolve => setTimeout(resolve, 8000));
+              await new Promise(resolve => setTimeout(resolve, 5000));
             }
           }
 
-          // Dynamic cooling gap
-          if (i + CHUNK_SIZE < titlesToSearch.length) {
-            const waitTime = titlesToSearch.length > 10 ? 4000 : 2500;
-            await new Promise(resolve => setTimeout(resolve, waitTime));
+          // Minimal cooling gap to keep it fast
+          if (i + 10 < titlesToSearch.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
       }
@@ -582,7 +580,7 @@ function MainContent() {
   const confirmSelection = async (resultIndex: number, optionIndex: number, customComic?: ComicInfo) => {
     const result = results[resultIndex];
     const selection = customComic || result.options[optionIndex];
-    if (!selection) return;
+    if (!selection || savingId) return;
     
     // Final duplicate check before saving
     const isDuplicate = [...collection, ...droppedList].some(item => 
@@ -595,9 +593,26 @@ function MainContent() {
       return;
     }
 
-    await saveRecentRead(selection);
-    showToast(`Saved: ${selection.title}`, "success");
-    loadAllData();
+    const uniqueId = `${resultIndex}-${optionIndex}`;
+    console.log(`[Save] Intent: ${selection.title} (ID: ${uniqueId})`);
+    setSavingId(uniqueId);
+    
+    try {
+      await saveRecentRead(selection);
+      showToast(`Saved: ${selection.title}`, "success");
+      await loadAllData();
+    } catch (err: any) {
+      console.error("[Save] Failure:", err);
+      // Attempt to parse FirestoreErrorInfo
+      try {
+        const errInfo = JSON.parse(err.message);
+        showToast(`Save Denied: ${errInfo.error.substring(0, 40)}`, "warn");
+      } catch {
+        showToast("Save failure. Permission denied.", "warn");
+      }
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const onDropToggle = async (id: string, status: boolean) => {
@@ -974,18 +989,21 @@ function MainContent() {
                             {res.options.length > 0 ? (
                               res.options.map((opt, optIdx) => {
                                 const isSaved = [...collection, ...droppedList].some(item => 
-                                  item.title.toLowerCase() === opt.title.toLowerCase() ||
-                                  item.altTitles?.some(at => at.toLowerCase() === opt.title.toLowerCase())
+                                  item.title.toLowerCase().trim() === opt.title.toLowerCase().trim() ||
+                                  item.altTitles?.some(at => at.toLowerCase().trim() === opt.title.toLowerCase().trim())
                                 );
                                 
                                 return (
                                   <button 
                                     key={optIdx}
+                                    disabled={isSaved || savingId === `${resIdx}-${optIdx}`}
                                     onClick={() => !isSaved && confirmSelection(resIdx, optIdx)}
                                     className={`w-full text-left p-5 border rounded-2xl transition-all relative overflow-hidden group/opt ${
                                       isSaved 
                                         ? 'bg-emerald-500/5 border-emerald-500/20 cursor-default' 
-                                        : 'bg-slate-900/40 border-slate-800 hover:border-[#ec4899]/40 hover:bg-slate-800/40'
+                                        : savingId === `${resIdx}-${optIdx}`
+                                          ? 'bg-[#ec4899]/5 border-[#ec4899]/30 border-animate'
+                                          : 'bg-slate-900/40 border-slate-800 hover:border-[#ec4899]/40 hover:bg-slate-800/40'
                                     }`}
                                   >
                                     <div className="flex items-center justify-between mb-3">
@@ -994,8 +1012,10 @@ function MainContent() {
                                         <div className="flex items-center gap-1 text-[9px] font-black uppercase text-emerald-400">
                                           <span>Shelved</span>
                                         </div>
+                                      ) : savingId === `${resIdx}-${optIdx}` ? (
+                                        <Loader2 size={18} className="text-[#ec4899] animate-spin" />
                                       ) : (
-                                        <Plus size={18} className="text-[#ec4899] opacity-0 group-hover/opt:opacity-100 transition-all transform translate-x-2 group-hover/opt:translate-x-0" />
+                                        <Plus size={18} className="text-[#ec4899] opacity-40 group-hover/opt:opacity-100 transition-all transform translate-x-1 group-hover/opt:translate-x-0" />
                                       )}
                                     </div>
                                     <div className="flex gap-2 mb-3">
@@ -1013,6 +1033,7 @@ function MainContent() {
                             )}
                             
                             <button 
+                              disabled={savingId === `${resIdx}--1`}
                               onClick={() => {
                                 const fallback: ComicInfo = {
                                   title: res.title,
@@ -1026,9 +1047,9 @@ function MainContent() {
                                 };
                                 confirmSelection(resIdx, -1, fallback);
                               }}
-                              className="w-full py-4 border border-dashed border-slate-800 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 hover:text-[#ec4899] hover:border-[#ec4899]/50 hover:bg-[#ec4899]/5 rounded-2xl transition-all"
+                              className="w-full h-12 flex items-center justify-center border border-dashed border-slate-800 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 hover:text-[#ec4899] hover:border-[#ec4899]/50 hover:bg-[#ec4899]/5 rounded-2xl transition-all disabled:opacity-50"
                             >
-                              Manual Entry
+                              {savingId === `${resIdx}--1` ? <Loader2 size={16} className="animate-spin" /> : 'Manual Entry'}
                             </button>
                           </div>
                         </div>

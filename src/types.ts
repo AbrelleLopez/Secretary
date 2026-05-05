@@ -1,5 +1,5 @@
-export type ComicType = 'manga' | 'manhwa' | 'manhua' | 'unknown';
-export type ComicStatus = 'ongoing' | 'finished' | 'hiatus' | 'cancelled' | 'discontinued' | 'unknown';
+export type ComicType = 'manga' | 'manhwa' | 'manhua' | 'novel' | 'light novel' | 'one-shot' | 'doujinshi' | 'unknown' | string;
+export type ComicStatus = 'ongoing' | 'finished' | 'hiatus' | 'cancelled' | 'discontinued' | 'unknown' | string;
 
 export interface Notification {
   id?: string;
@@ -26,10 +26,10 @@ export interface ComicInfo {
   type: ComicType;
   status: ComicStatus;
   genres: string[];
-  synopsis: string;
-  originalLanguage: string;
-  author: string;
-  releaseYear: string;
+  synopsis?: string;
+  originalLanguage?: string;
+  author?: string;
+  releaseYear?: string;
   rating?: string;
   altTitles?: string[];
   id?: string;
