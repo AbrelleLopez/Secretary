@@ -55,7 +55,7 @@ async function retryLookup<T>(fn: () => Promise<T>, retries = 5, delay = 3000): 
   }
 }
 
-function mapStatus(status: string): ComicStatus {
+export function mapStatus(status: string): ComicStatus {
   const s = status.toLowerCase();
   if (s.includes('ongoing') || s.includes('publishing')) return 'ongoing';
   if (s.includes('finished') || s.includes('complete')) return 'finished';
@@ -151,7 +151,24 @@ export async function lookupComicsBatch(searchQueries: string[]): Promise<Record
           releaseYear: data.releaseYear || "Unknown",
           rating: data.rating,
           altTitles: data.altTitles || []
-        })).filter(comic => isRelevant(query, comic.title, comic.altTitles));
+        })).filter(comic => {
+          // Rule: Only search for manhwa/manhua/manga, no novels or books
+          const validTypes: ComicType[] = ['manga', 'manhwa', 'manhua'];
+          if (!validTypes.includes(comic.type)) return false;
+          
+          return isRelevant(query, comic.title, comic.altTitles);
+        }).map(comic => {
+          // Rule: if a title is searched and the result is the same comic but different title, 
+          // just find the one that the user put as the title because they may not know the title alternatives.
+          const nQ = normalize(query);
+          if (normalize(comic.title) !== nQ) {
+            const matchingAlt = comic.altTitles.find(at => normalize(at) === nQ);
+            if (matchingAlt) {
+              return { ...comic, title: query }; // Use the user's exact query if it matched an alt title
+            }
+          }
+          return comic;
+        });
 
         normalized[query] = filteredResults;
       });
@@ -185,8 +202,24 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
     altTitles: res.titles?.map((t: any) => t.title) || []
   }));
 
-  // Filter Jikan results: Robust relevance check
-  const relevantJikan = mappedJikan.filter(c => isRelevant(title, c.title, c.altTitles));
+  // Filter Jikan results: Robust relevance check + strict type filtering
+  const relevantJikan = mappedJikan.filter(c => {
+    // Only manga/manhwa/manhua
+    const validTypes: ComicType[] = ['manga', 'manhwa', 'manhua'];
+    if (!validTypes.includes(c.type)) return false;
+    
+    return isRelevant(title, c.title, c.altTitles);
+  }).map(comic => {
+    // Title matching override
+    const nQ = normalize(title);
+    if (normalize(comic.title) !== nQ) {
+      const matchingAlt = comic.altTitles.find(at => normalize(at) === nQ);
+      if (matchingAlt) {
+        return { ...comic, title: title }; // Matches user query
+      }
+    }
+    return comic;
+  });
 
   // 2. Fetch Gemini Results 
   // We fetch Gemini results if we have few Jikan matches OR if it's likely a Manhua/Manhwa (often not on MAL)
@@ -203,9 +236,20 @@ export async function lookupComicHybrid(title: string): Promise<ComicInfo[]> {
   [...relevantJikan, ...geminiData].forEach(comic => {
     const titleKey = comic.title.toLowerCase().trim();
     if (!seen.has(titleKey)) {
-      if (isRelevant(title, comic.title, comic.altTitles)) {
+      // Re-apply relevance check and type check for Gemini results
+      const validTypes: ComicType[] = ['manga', 'manhwa', 'manhua'];
+      if (validTypes.includes(comic.type) && isRelevant(title, comic.title, comic.altTitles)) {
         seen.add(titleKey);
-        combined.push(comic);
+        
+        let processedComic = comic;
+        const nQ = normalize(title);
+        if (normalize(comic.title) !== nQ) {
+          const matchingAlt = comic.altTitles.find(at => normalize(at) === nQ);
+          if (matchingAlt) {
+            processedComic = { ...comic, title: title };
+          }
+        }
+        combined.push(processedComic);
       }
     }
   });

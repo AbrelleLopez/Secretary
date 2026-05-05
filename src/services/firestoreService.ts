@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { ComicInfo } from '../types';
+import { mapStatus } from './geminiService';
 
 enum OperationType {
   CREATE = 'create',
@@ -79,12 +80,11 @@ export async function saveRecentRead(comic: ComicInfo) {
       const dataToSave = cleanData({
         title: comic.title || 'Unknown Title',
         type: comic.type || 'unknown',
-        status: comic.status || 'unknown',
+        status: mapStatus(comic.status || 'unknown'),
         genres: comic.genres || [],
         userId: user.uid,
         timestamp: serverTimestamp(),
         dropped: false,
-        // Optional fields - only include if they exist to keep data clean
         synopsis: comic.synopsis,
         author: comic.author,
         releaseYear: comic.releaseYear,
@@ -94,9 +94,17 @@ export async function saveRecentRead(comic: ComicInfo) {
       });
       await addDoc(collection(db, path), dataToSave);
     } else {
-      // Update its timestamp to move it to the top
+      // Update its timestamp and info to refresh data
       const docRef = doc(db, path, existing.docs[0].id);
       await updateDoc(docRef, {
+        status: mapStatus(comic.status || 'unknown'),
+        genres: comic.genres,
+        synopsis: comic.synopsis,
+        author: comic.author,
+        releaseYear: comic.releaseYear,
+        originalLanguage: comic.originalLanguage,
+        altTitles: comic.altTitles,
+        rating: comic.rating,
         timestamp: serverTimestamp()
       });
     }
@@ -122,8 +130,12 @@ export async function updateComic(comicId: string, data: Partial<ComicInfo>) {
   const path = 'recent_reads';
   try {
     const docRef = doc(db, path, comicId);
+    const cleaned = cleanData(data);
+    if (cleaned.status) {
+      cleaned.status = mapStatus(cleaned.status);
+    }
     await updateDoc(docRef, {
-      ...cleanData(data),
+      ...cleaned,
       timestamp: serverTimestamp()
     });
   } catch (error) {
@@ -163,6 +175,7 @@ export async function getCollection(dropped: boolean = false): Promise<ComicInfo
       return {
         ...data,
         id: doc.id,
+        status: mapStatus(data.status || 'unknown'),
         timestamp: (data.timestamp as Timestamp)?.toDate() || new Date()
       } as ComicInfo;
     });
@@ -190,6 +203,7 @@ export async function getRecentReads(): Promise<ComicInfo[]> {
       return {
         ...data,
         id: doc.id,
+        status: mapStatus(data.status || 'unknown'),
         timestamp: (data.timestamp as Timestamp)?.toDate() || new Date()
       } as ComicInfo;
     });

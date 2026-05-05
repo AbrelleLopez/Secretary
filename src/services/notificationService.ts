@@ -15,6 +15,7 @@ import {
 import { db, auth } from '../lib/firebase';
 import { Notification, ComicInfo } from '../types';
 import { lookupTitlesFromJikan } from './jikanService';
+import { mapStatus } from './geminiService';
 
 export async function getNotifications(): Promise<Notification[]> {
   const user = auth.currentUser;
@@ -72,26 +73,26 @@ export async function checkForUpdates(comics: ComicInfo[]) {
       const jikanResults = await lookupTitlesFromJikan(comic.title, 1);
       const freshData = jikanResults.length > 0 ? jikanResults[0] : null;
       if (freshData) {
-        const newStatus = (freshData.status || 'unknown').toLowerCase();
+        const newStatus = mapStatus(freshData.status || 'unknown');
         
-        // If status changed to finished
-        if (newStatus === 'finished') {
-          await createNotification({
-            userId: user.uid,
-            title: 'Comic Finished!',
-            message: `"${comic.title}" is now marked as finished.`,
-            type: 'status_change',
-            timestamp: serverTimestamp(),
-            read: false,
-            comicId: comic.id
-          });
+        if (newStatus !== comic.status) {
+          if (newStatus === 'finished') {
+            await createNotification({
+              userId: user.uid,
+              title: 'Comic Finished!',
+              message: `"${comic.title}" is now marked as finished.`,
+              type: 'status_change',
+              timestamp: serverTimestamp(),
+              read: false,
+              comicId: comic.id
+            });
+          }
 
-          // Also update the comic in the library
           if (comic.id) {
             const comicRef = doc(db, 'recent_reads', comic.id);
             await updateDoc(comicRef, { 
-              status: 'finished',
-              timestamp: serverTimestamp() // Keep it active if desired, or just update status
+              status: newStatus,
+              timestamp: serverTimestamp()
             });
           }
         }
